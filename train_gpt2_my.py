@@ -165,8 +165,9 @@ while x.size(1) < max_length:
     logits = logits[:, -1, :]
     probs = F.softmax(logits, dim=-1)
     topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+    print(topk_probs)
     idx = torch.multinomial(topk_probs, 1)
-    xcol = torch.gather(topk_indices, -1, ix)
+    xcol = torch.gather(topk_indices, -1, idx)
     x = torch.cat((x, xcol), dim=1)
   
 for i in range(num_return_sequences):

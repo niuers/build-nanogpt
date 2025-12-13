@@ -162,6 +162,7 @@ torch.cuda.manual_seed(42)
 while x.size(1) < max_length:
   with torch.no_grad():
     logits = model(x)
+    print(logits)
     logits = logits[:, -1, :]
     probs = F.softmax(logits, dim=-1)
     topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)

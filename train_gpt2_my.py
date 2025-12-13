@@ -200,7 +200,7 @@ class DataLoaderLite:
     return x, y
 
     
-
+import time
 device = "cpu"
 if torch.cuda.is_available():
   device = 'cuda'
@@ -214,23 +214,36 @@ torch.manual_seed(1337)
 if torch.cuda.is_available():
   torch.cuda.manual_seed(1337)
 
-train_loader = DataLoaderLite(B=4, T=32)
+train_loader = DataLoaderLite(B=16, T=1024)
+
+# set precision to TF32 when does matric multiplication
+# Note all the numbers still have float32 type
+torch.set_float32_matmul_precision('high') 
+
 # model = GPT.from_pretrained('gpt2')
 model = GPT(GPTConfigs())
 model.eval()
 model.to(device)
 # logits, loss = model(x,y)
-
+model = torch.compile(model)
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 for i in range(50):
+  t0 = time.time()
   optimizer.zero_grad()
   x, y = train_loader.next_batch()
   x, y = x.to(device), y.to(device)
-  logits, loss = model(x, y)
+  with torch.autocast(device_type=device, dtype=torch.bfloat16): # use BF16, now we get mixed precision
+    logits, loss = model(x, y)
+    # import code; code.interact(local=locals()) # debug
+  
   loss.backward()
   optimizer.step()
-  print(f"step {i}, loss: {loss.item()}")
+  torch.cuda.synchronize() #wait for gpu to finish work scheduled above
+  t1 = time.time()
+  dt = (t1-t0)*1000 # time difference in milliseconds
+  tokens_per_sec = (train_loader.B * train_loader.T)/(t1-t0)
+  print(f"step {i}, loss: {loss.item()}, dt: {dt:.2f} ms, tok/sec: {tokens_per_sec}")
 
 print(loss, logits.shape)
 import sys; sys.exit(0)

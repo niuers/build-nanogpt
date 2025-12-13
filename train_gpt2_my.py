@@ -21,7 +21,8 @@ class CausalSelfAttention(nn.Module):
     self.c_attn = nn.Linear(config.n_embd, 3*config.n_embd)
     self.c_proj = nn.Linear(config.n_embd, config.n_embd)
     self.n_head = config.n_head
-    self.n_embd = config.n_embdself.register_buffer("bias", 
+    self.n_embd = config.n_embd
+    self.register_buffer("bias", 
                   torch.tril(torch.ones(config.block_size, config.block_size))
                   .view(1,1,config.block_size, config.block_size))
     
@@ -99,7 +100,7 @@ class GPT(nn.Module):
     config_args['vocab_size'] = 50257
     config_args['block_size'] = 1024
 
-    config = GPTConfig(**config_args)
+    config = GPTConfigs(**config_args)
     model = GPT(config)
     sd = model.state_dict()
     sd_keys = sd.keys()
@@ -111,8 +112,7 @@ class GPT(nn.Module):
     sd_keys_hf = sd_hf.keys()
     sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')]
     sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')]
-    transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj']
-
+    transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
     assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)}  != {len(sd_keys)}"
 
     for k in sd_keys_hf:

@@ -22,6 +22,7 @@ class CausalSelfAttention(nn.Module):
     self.c_proj = nn.Linear(config.n_embd, config.n_embd)
     self.n_head = config.n_head
     self.n_embd = config.n_embd
+    self.c_proj.NANOGPT_SCALE_INIT = 1
     self.register_buffer("bias", 
                   torch.tril(torch.ones(config.block_size, config.block_size))
                   .view(1,1,config.block_size, config.block_size))
@@ -29,7 +30,6 @@ class CausalSelfAttention(nn.Module):
   
   def forward(self, x):
     B, T, C = x.size()
-
     qkv = self.c_attn(x)
     q,k,v = qkv.split(self.n_embd, dim=2)
     k = k.view(B, T, self.n_head, C//self.n_head).transpose(1,2)
@@ -38,6 +38,7 @@ class CausalSelfAttention(nn.Module):
 
     att = (q @ k.transpose(-2, -1)) * (1.0/math.sqrt(k.size(-1)))
     att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+    att = F.softmax(att, dim=-1)
     y = att @ v
     y = y.transpose(1,2).contiguous().view(B,T,C)
     y = self.c_proj(y)
@@ -49,6 +50,7 @@ class MLP(nn.Module):
     self.c_fc = nn.Linear(config.n_embd, 4*config.n_embd)
     self.gelu = nn.GELU(approximate='tanh')
     self.c_proj = nn.Linear(4*config.n_embd, config.n_embd)
+    self.c_proj.NANOGPT_SCALE_INIT = 1
   
   def forward(self, x):
     x = self.c_fc(x)
@@ -66,8 +68,14 @@ class Block(nn.Module):
     self.mlp = MLP(config)
   
   def forward(self, x):
+    v1 = self.ln_1(x)
+    # print(f"After ln_1: {v1[0]=}")
+    xsds = self.attn(v1)
+    # print(f"After attn : {xsds[0]=}")
     x = x + self.attn(self.ln_1(x))
+    # print(f"after first step: {x[0]=}")
     x = x + self.mlp(self.ln_2(x))
+    # print(f"after 2nd step: {x[0]=}")
     return x
 
 class GPT(nn.Module):
@@ -89,12 +97,15 @@ class GPT(nn.Module):
     assert T <= self.config.block_size, f"Cannot forward sequence of length {T}, block size"
     pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
     pos_emb = self.transformer.wpe(pos)
+    # print(f"{pos_emb[0]=}")
     tok_emb = self.transformer.wte(idx)
+    # print(f"{tok_emb[0]=}")
     x = pos_emb + tok_emb
     for block in self.transformer.h:
       x = block(x)
-    
+    # print(f"after block: {x[0]=}")
     x = self.transformer.ln_f(x)
+    # print(f"after ln_f: {x[0]=}")
     logits = self.lm_head(x)
     return logits
 
@@ -162,11 +173,12 @@ torch.cuda.manual_seed(42)
 while x.size(1) < max_length:
   with torch.no_grad():
     logits = model(x)
-    print(logits)
+    # print(logits)
+    # break
     logits = logits[:, -1, :]
     probs = F.softmax(logits, dim=-1)
     topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
-    print(topk_probs)
+    # print(topk_probs)
     idx = torch.multinomial(topk_probs, 1)
     xcol = torch.gather(topk_indices, -1, idx)
     x = torch.cat((x, xcol), dim=1)
